@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmBlockThreshold } from "@google/generative-ai";
 
 // Initialize Gemini with your API key
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
@@ -36,24 +36,25 @@ export async function POST(req: NextRequest) {
       contents: [{ role: "user", parts: [{ text: latestMessage }] }],
       safetySettings: [
         {
-          category: HarmCategory.HARASSMENT,
+          category: "harm-category-harassment", // Use string-based categories
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
         {
-          category: HarmCategory.HATE_SPEECH,
+          category: "harm-category-hate-speech",
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
         {
-          category: HarmCategory.SEXUALLY_EXPLICIT,
+          category: "harm-category-sexually-explicit",
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
         {
-          category: HarmCategory.DANGEROUS_CONTENT,
+          category: "harm-category-dangerous-content",
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
       ],
     });
 
+    // Extract response content
     const response = result.response?.text() || "No response received.";
 
     // Return the Gemini response
