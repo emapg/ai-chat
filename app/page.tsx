@@ -20,11 +20,50 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Function to call Gemini API
+  const callGeminiAPI = async (updatedMessages: Message[]) => {
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+
+    const userContent = updatedMessages.map((m) => ({
+      role: m.role,
+      parts: [{ text: m.content }],
+    }));
+
+    const payload = {
+      contents: userContent,
+    };
+
+    try {
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" +
+          apiKey,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = await res.json();
+
+      if (data && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        return data.candidates[0].content.parts[0].text;
+      }
+      return "Sorry, I couldn't generate a response.";
+    } catch (error) {
+      console.error("Error calling Gemini API:", error);
+      return "An error occurred while fetching a response.";
+    }
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
-    const timestamp = new Date().toLocaleTimeString();
+    const timestamp = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     const newMessage: Message = { role: "user", content: input, timestamp };
     const updatedMessages = [...messages, newMessage];
 
@@ -33,17 +72,14 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages }),
-      });
-
-      const data = await res.json();
+      const response = await callGeminiAPI(updatedMessages);
       const aiMessage: Message = {
         role: "assistant",
-        content: data.response,
-        timestamp: new Date().toLocaleTimeString(),
+        content: response,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
       };
 
       setMessages((prev) => [...prev, aiMessage]);
@@ -72,20 +108,20 @@ export default function Home() {
   return (
     <div
       className={`flex flex-col items-center justify-center min-h-screen ${
-        darkMode ? "bg-gray-900 text-gray-100" : "bg-blue-50 text-gray-900"
+        darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900"
       } transition-all`}
     >
       {/* Theme Switch */}
       <button
         onClick={() => setDarkMode(!darkMode)}
-        className="absolute top-4 right-4 text-xl"
+        className="absolute top-4 right-4 p-2 bg-gray-200 dark:bg-gray-700 rounded-full hover:scale-110 transition"
       >
-        {darkMode ? <FiSun /> : <FiMoon />}
+        {darkMode ? <FiSun size={24} /> : <FiMoon size={24} />}
       </button>
 
       {/* Chat Container */}
       <div
-        className={`w-full max-w-3xl shadow-xl rounded-xl flex flex-col h-[80vh] ${
+        className={`w-full max-w-3xl shadow-lg rounded-xl flex flex-col h-[85vh] ${
           darkMode ? "bg-gray-800" : "bg-white"
         }`}
       >
@@ -123,16 +159,22 @@ export default function Home() {
                     ? "bg-blue-500 text-white"
                     : darkMode
                     ? "bg-gray-700 text-gray-100"
-                    : "bg-gray-100 text-gray-800"
+                    : "bg-gray-200 text-gray-800"
                 }`}
               >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  className="prose prose-sm"
+                  className="prose prose-sm dark:prose-invert"
                 >
                   {msg.content}
                 </ReactMarkdown>
-                <p className="text-xs mt-1 opacity-70">{msg.timestamp}</p>
+                <p
+                  className={`text-xs mt-1 ${
+                    darkMode ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  {msg.timestamp}
+                </p>
                 {msg.role === "assistant" && (
                   <button
                     onClick={() => copyToClipboard(msg.content)}
@@ -163,7 +205,7 @@ export default function Home() {
         <form
           onSubmit={sendMessage}
           className={`p-4 flex space-x-2 border-t ${
-            darkMode ? "bg-gray-700" : "bg-gray-50"
+            darkMode ? "bg-gray-700" : "bg-gray-100"
           }`}
         >
           <input
@@ -171,7 +213,11 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message here..."
-            className="flex-1 p-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className={`flex-1 p-2 rounded-lg border focus:outline-none focus:ring-2 ${
+              darkMode
+                ? "bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-500"
+                : "bg-white text-gray-900 border-gray-300 focus:ring-blue-400"
+            }`}
           />
           <button
             type="submit"
@@ -189,8 +235,8 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-4 text-gray-600 text-sm text-center">
-        Built with ❤️ using Next.js, Tailwind CSS, Framer Motion, and React Icons
+      <footer className="mt-4 text-gray-600 dark:text-gray-400 text-sm text-center">
+        Built with ❤️ using Gemini, Next.js, Tailwind CSS, and React Icons
       </footer>
     </div>
   );
