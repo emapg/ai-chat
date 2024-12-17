@@ -7,7 +7,6 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { FiSend, FiTrash2, FiCopy, FiMoon, FiSun } from "react-icons/fi";
-import { BiLoaderAlt } from "react-icons/bi";
 
 type Message = {
   role: "user" | "assistant";
