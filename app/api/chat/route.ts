@@ -1,13 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI, HarmBlockThreshold } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  HarmBlockThreshold,
+  GenerateContentRequest,
+  GenerateContentResponse,
+} from "@google/generative-ai";
 
 // Initialize Gemini with your API key
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
+// Define message type
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+// Define request body type
+interface ChatRequestBody {
+  messages: Message[];
+}
+
+// Define response type
+interface ChatResponse {
+  response: string;
+}
+
+// Handler for POST requests
 export async function POST(req: NextRequest) {
   try {
     // Parse the request body
-    const body = await req.json();
+    const body = (await req.json()) as ChatRequestBody;
     const { messages } = body;
 
     // Validate 'messages' input
@@ -31,12 +53,12 @@ export async function POST(req: NextRequest) {
     // Configure the Gemini model
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
-    // Generate response from Gemini
-    const result = await model.generateContent({
+    // Define the request to Gemini API
+    const request: GenerateContentRequest = {
       contents: [{ role: "user", parts: [{ text: latestMessage }] }],
       safetySettings: [
         {
-          category: "harm-category-harassment", // Use string-based categories
+          category: "harm-category-harassment",
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
         {
@@ -52,13 +74,18 @@ export async function POST(req: NextRequest) {
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
       ],
-    });
+    };
+
+    // Generate content
+    const result: GenerateContentResponse = await model.generateContent(request);
 
     // Extract response content
-    const response = result.response?.text() || "No response received.";
+    const response =
+      result.response?.text() || "No response received from the AI.";
 
     // Return the Gemini response
-    return NextResponse.json({ response });
+    const responseBody: ChatResponse = { response };
+    return NextResponse.json(responseBody);
   } catch (error) {
     console.error("Error with Gemini API:", error);
 
