@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
-// Initialize OpenAI with API key
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize Gemini with your API key
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-// API handler for POST requests
 export async function POST(req: NextRequest) {
   try {
     // Parse the request body
     const body = await req.json();
     const { messages } = body;
 
-    // Validate messages array
+    // Validate 'messages' input
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
         { error: "Invalid request format. 'messages' should be an array." },
@@ -21,31 +18,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Call OpenAI API for chat completions
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Change to the desired model like "gpt-4o-mini" or "gpt-3.5-turbo"
-      messages,
-    });
+    // Extract the user's latest input
+    const latestMessage = messages[messages.length - 1]?.content || "";
 
-    // Extract AI response from the completion
-    const response = completion.choices[0]?.message?.content || "No response received.";
-
-    // Return the response to the client
-    return NextResponse.json({ response });
-  } catch (error) {
-    console.error("Error in OpenAI API call:", error);
-
-    // Handle OpenAI-specific errors
-    if (error instanceof OpenAI.APIError) {
+    if (!latestMessage) {
       return NextResponse.json(
-        { error: error.message, status: error.status },
-        { status: error.status || 500 }
+        { error: "Empty message content." },
+        { status: 400 }
       );
     }
 
-    // General error fallback
+    // Configure the Gemini model
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+    // Generate response from Gemini
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: latestMessage }] }],
+      safetySettings: [
+        {
+          category: HarmCategory.HARM_CATEGORY_DEROGATORY,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+      ],
+    });
+
+    const response = result.response?.text() || "No response received.";
+
+    // Return the Gemini response
+    return NextResponse.json({ response });
+  } catch (error) {
+    console.error("Error with Gemini API:", error);
+
     return NextResponse.json(
-      { error: "Something went wrong on the server." },
+      { error: "Something went wrong while fetching the AI response." },
       { status: 500 }
     );
   }
