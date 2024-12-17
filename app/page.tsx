@@ -20,6 +20,7 @@ export default function Home() {
   const [input, setInput] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [currentAIResponse, setCurrentAIResponse] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -33,6 +34,7 @@ export default function Home() {
     setMessages(updatedMessages);
     setInput("");
     setLoading(true);
+    setCurrentAIResponse("");
 
     try {
       const res = await fetch("/api/chat", {
@@ -41,45 +43,29 @@ export default function Home() {
         body: JSON.stringify({ messages: updatedMessages }),
       });
 
-      if (!res.body) throw new Error("No response body found!");
+      if (!res.body) throw new Error("No response body");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let done = false;
+      let partialMessage = "";
 
-      const streamMessage: Message = {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        partialMessage += chunk;
+
+        setCurrentAIResponse(partialMessage);
+      }
+
+      const aiMessage: Message = {
         role: "assistant",
-        content: "",
+        content: partialMessage,
         timestamp: new Date().toLocaleTimeString(),
       };
 
-      setMessages((prev) => [...prev, streamMessage]);
-
-      while (!done) {
-        if (!reader) {
-          console.error("Stream reader is unavailable.");
-          break;
-        }
-
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const json = JSON.parse(chunk);
-          const textPart =
-            json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastMessage = updated[updated.length - 1];
-            if (lastMessage.role === "assistant") {
-              lastMessage.content += textPart;
-            }
-            return updated;
-          });
-        }
-      }
+      setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
       console.error("Error fetching response:", error);
     } finally {
@@ -90,6 +76,7 @@ export default function Home() {
   const clearChat = () => {
     if (confirm("Are you sure you want to clear the chat?")) {
       setMessages([]);
+      setCurrentAIResponse("");
     }
   };
 
@@ -100,7 +87,7 @@ export default function Home() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, currentAIResponse]);
 
   return (
     <div
@@ -162,7 +149,7 @@ export default function Home() {
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    code({ node, inline, className, children, ...props }) {
+                    code({ inline, className, children, ...props }) {
                       const match = /language-(\w+)/.exec(className || "");
                       return !inline && match ? (
                         <SyntaxHighlighter
@@ -188,6 +175,7 @@ export default function Home() {
                       );
                     },
                   }}
+                  className="prose prose-sm"
                 >
                   {msg.content}
                 </ReactMarkdown>
@@ -204,6 +192,32 @@ export default function Home() {
               </div>
             </motion.div>
           ))}
+
+          {/* Real-time Streaming */}
+          {currentAIResponse && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex justify-start"
+            >
+              <div
+                className={`relative px-4 py-2 max-w-xs rounded-lg shadow ${
+                  darkMode
+                    ? "bg-gray-700 text-gray-100"
+                    : "bg-gray-100 text-gray-800"
+                }`}
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  className="prose prose-sm"
+                >
+                  {currentAIResponse}
+                </ReactMarkdown>
+              </div>
+            </motion.div>
+          )}
+
           {loading && (
             <motion.div
               initial={{ opacity: 0 }}
