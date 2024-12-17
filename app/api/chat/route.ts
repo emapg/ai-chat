@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     // Call OpenAI API for chat completions
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o", // Change to the desired model like "gpt-4o-mini" or "gpt-3.5-turbo"
+      model: "gpt-4o-mini", // Change to the desired model like "gpt-4o-mini" or "gpt-3.5-turbo"
       messages,
     });
 
