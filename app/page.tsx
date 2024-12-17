@@ -4,9 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { dracula, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { FiSend, FiTrash2, FiCopy, FiMoon, FiSun } from "react-icons/fi";
+import { BiLoaderAlt } from "react-icons/bi";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 type Message = {
   role: "user" | "assistant";
@@ -21,48 +22,11 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Function to call Gemini API and stream response
-  const callGeminiAPI = async (updatedMessages: Message[], onChunk: (chunk: string) => void) => {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-    const userContent = updatedMessages.map((m) => ({
-      role: m.role,
-      parts: [{ text: m.content }],
-    }));
-
-    const payload = { contents: userContent };
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let done = false;
-
-    while (!done) {
-      const { value, done: readerDone } = await reader?.read()!;
-      done = readerDone;
-      const chunk = decoder.decode(value, { stream: true });
-      const json = JSON.parse(chunk);
-
-      const textPart = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      if (textPart) {
-        onChunk(textPart);
-      }
-    }
-  };
-
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
-    const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const timestamp = new Date().toLocaleTimeString();
     const newMessage: Message = { role: "user", content: input, timestamp };
     const updatedMessages = [...messages, newMessage];
 
@@ -70,20 +34,52 @@ export default function Home() {
     setInput("");
     setLoading(true);
 
-    let currentContent = "";
-    const aiMessage: Message = { role: "assistant", content: "", timestamp };
-
-    setMessages((prev) => [...prev, { ...aiMessage, content: currentContent }]);
-
     try {
-      await callGeminiAPI(updatedMessages, (chunk) => {
-        currentContent += chunk;
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = currentContent;
-          return newMessages;
-        });
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: updatedMessages }),
       });
+
+      if (!res.body) throw new Error("No response body found!");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+
+      const streamMessage: Message = {
+        role: "assistant",
+        content: "",
+        timestamp: new Date().toLocaleTimeString(),
+      };
+
+      setMessages((prev) => [...prev, streamMessage]);
+
+      while (!done) {
+        if (!reader) {
+          console.error("Stream reader is unavailable.");
+          break;
+        }
+
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const json = JSON.parse(chunk);
+          const textPart =
+            json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastMessage = updated[updated.length - 1];
+            if (lastMessage.role === "assistant") {
+              lastMessage.content += textPart;
+            }
+            return updated;
+          });
+        }
+      }
     } catch (error) {
       console.error("Error fetching response:", error);
     } finally {
@@ -109,29 +105,35 @@ export default function Home() {
   return (
     <div
       className={`flex flex-col items-center justify-center min-h-screen ${
-        darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900"
+        darkMode ? "bg-gray-900 text-gray-100" : "bg-blue-50 text-gray-900"
       } transition-all`}
     >
       {/* Theme Switch */}
       <button
         onClick={() => setDarkMode(!darkMode)}
-        className="absolute top-4 right-4 p-2 bg-gray-200 dark:bg-gray-700 rounded-full hover:scale-110 transition"
+        className="absolute top-4 right-4 text-xl"
       >
-        {darkMode ? <FiSun size={24} /> : <FiMoon size={24} />}
+        {darkMode ? <FiSun /> : <FiMoon />}
       </button>
 
       {/* Chat Container */}
       <div
-        className={`w-full max-w-3xl shadow-lg rounded-xl flex flex-col h-[85vh] ${
+        className={`w-full max-w-3xl shadow-xl rounded-xl flex flex-col h-[80vh] ${
           darkMode ? "bg-gray-800" : "bg-white"
         }`}
       >
         {/* Header */}
-        <div className={`text-white py-4 px-6 rounded-t-xl flex justify-between items-center ${
-          darkMode ? "bg-gray-700" : "bg-blue-600"
-        }`}>
+        <div
+          className={`${
+            darkMode ? "bg-gray-700" : "bg-blue-600"
+          } text-white py-4 px-6 rounded-t-xl flex justify-between items-center`}
+        >
           <h1 className="text-2xl font-bold">AI Chatbot</h1>
-          <button onClick={clearChat} className="hover:text-red-400 transition" aria-label="Clear chat">
+          <button
+            onClick={clearChat}
+            className="hover:text-red-400 transition"
+            aria-label="Clear chat"
+          >
             <FiTrash2 size={24} />
           </button>
         </div>
@@ -144,11 +146,19 @@ export default function Home() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex ${
+                msg.role === "user" ? "justify-end" : "justify-start"
+              }`}
             >
-              <div className={`relative px-4 py-2 max-w-xs rounded-lg shadow ${
-                msg.role === "user" ? "bg-blue-500 text-white" : darkMode ? "bg-gray-700 text-gray-100" : "bg-gray-200 text-gray-800"
-              }`}>
+              <div
+                className={`relative px-4 py-2 max-w-xs rounded-lg shadow ${
+                  msg.role === "user"
+                    ? "bg-blue-500 text-white"
+                    : darkMode
+                    ? "bg-gray-700 text-gray-100"
+                    : "bg-gray-100 text-gray-800"
+                }`}
+              >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -156,7 +166,7 @@ export default function Home() {
                       const match = /language-(\w+)/.exec(className || "");
                       return !inline && match ? (
                         <SyntaxHighlighter
-                          style={darkMode ? dracula : oneLight}
+                          style={oneDark}
                           language={match[1]}
                           PreTag="div"
                           {...props}
@@ -164,13 +174,20 @@ export default function Home() {
                           {String(children).replace(/\n$/, "")}
                         </SyntaxHighlighter>
                       ) : (
-                        <code className={className} {...props}>
+                        <code
+                          className={className}
+                          {...props}
+                          style={{
+                            backgroundColor: darkMode ? "#333" : "#eee",
+                            padding: "2px 4px",
+                            borderRadius: "4px",
+                          }}
+                        >
                           {children}
                         </code>
                       );
                     },
                   }}
-                  className="prose dark:prose-invert prose-sm"
                 >
                   {msg.content}
                 </ReactMarkdown>
@@ -187,23 +204,53 @@ export default function Home() {
               </div>
             </motion.div>
           ))}
+          {loading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, repeat: Infinity }}
+              className="text-gray-500 flex items-center space-x-2"
+            >
+              <BiLoaderAlt className="animate-spin" size={20} />
+              <p>Assistant is typing...</p>
+            </motion.div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input Box */}
-        <form onSubmit={sendMessage} className="p-4 flex space-x-2 border-t bg-gray-100 dark:bg-gray-700">
+        <form
+          onSubmit={sendMessage}
+          className={`p-4 flex space-x-2 border-t ${
+            darkMode ? "bg-gray-700" : "bg-gray-50"
+          }`}
+        >
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message here..."
-            className="flex-1 p-2 rounded-lg border focus:outline-none focus:ring-2"
+            className="flex-1 p-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
-          <button type="submit" disabled={loading || !input.trim()} className="p-2 bg-blue-600 text-white rounded-lg">
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className={`p-2 rounded-lg ${
+              darkMode
+                ? "bg-blue-500 hover:bg-blue-600"
+                : "bg-blue-600 hover:bg-blue-700"
+            } text-white transition-all disabled:bg-blue-300`}
+            aria-label="Send"
+          >
             <FiSend size={24} />
           </button>
         </form>
       </div>
+
+      {/* Footer */}
+      <footer className="mt-4 text-gray-600 text-sm text-center">
+        Built with ❤️ using Next.js, Tailwind CSS, Framer Motion, and React Icons
+      </footer>
     </div>
   );
 }
