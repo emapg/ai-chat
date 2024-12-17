@@ -36,7 +36,19 @@ export async function POST(req: NextRequest) {
       contents: [{ role: "user", parts: [{ text: latestMessage }] }],
       safetySettings: [
         {
-          category: HarmCategory.HARM_CATEGORY_DEROGATORY,
+          category: HarmCategory.HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.DANGEROUS_CONTENT,
           threshold: HarmBlockThreshold.BLOCK_NONE,
         },
       ],
