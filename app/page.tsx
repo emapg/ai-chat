@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FiSend, FiTrash2 } from "react-icons/fi";
+import { FiSend, FiTrash2, FiCopy } from "react-icons/fi";
 import { BiLoaderAlt } from "react-icons/bi";
 
 type Message = {
@@ -53,16 +53,21 @@ export default function Home() {
     }
   };
 
+  const copyToClipboard = (content: string) => {
+    navigator.clipboard.writeText(content);
+    alert("Copied to clipboard!");
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 text-gray-900">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-blue-50 to-blue-100 text-gray-900">
       {/* Chat Container */}
-      <div className="w-full max-w-3xl bg-white shadow-lg rounded-lg flex flex-col h-[80vh]">
+      <div className="w-full max-w-3xl bg-white shadow-xl rounded-xl flex flex-col h-[80vh]">
         {/* Header */}
-        <div className="bg-blue-600 text-white py-4 px-6 rounded-t-lg flex justify-between items-center">
+        <div className="bg-blue-600 text-white py-4 px-6 rounded-t-xl flex justify-between items-center">
           <h1 className="text-2xl font-bold">AI Chatbot</h1>
           <button
             onClick={clearChat}
@@ -84,13 +89,27 @@ export default function Home() {
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`px-4 py-2 max-w-xs rounded-lg ${
+                className={`relative px-4 py-2 max-w-xs rounded-lg shadow-md ${
                   msg.role === "user"
                     ? "bg-blue-500 text-white"
-                    : "bg-gray-200 text-gray-800"
+                    : "bg-gray-100 text-gray-800"
                 }`}
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  className="markdown prose prose-sm"
+                >
+                  {msg.content}
+                </ReactMarkdown>
+                {msg.role === "assistant" && (
+                  <button
+                    onClick={() => copyToClipboard(msg.content)}
+                    className="absolute bottom-1 right-1 text-gray-500 hover:text-gray-800 transition"
+                    aria-label="Copy to clipboard"
+                  >
+                    <FiCopy size={16} />
+                  </button>
+                )}
               </div>
             </motion.div>
           ))}
@@ -109,7 +128,10 @@ export default function Home() {
         </div>
 
         {/* Input Box */}
-        <form onSubmit={sendMessage} className="p-4 flex space-x-2 border-t">
+        <form
+          onSubmit={sendMessage}
+          className="p-4 flex space-x-2 border-t bg-gray-50"
+        >
           <input
             type="text"
             value={input}
@@ -129,8 +151,8 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-4 text-gray-500 text-sm">
-        Built with ❤️ using Next.js, Tailwind CSS, React Icons, and Framer Motion
+      <footer className="mt-4 text-gray-600 text-sm text-center">
+        Built with ❤️ using Next.js, Tailwind CSS, Framer Motion, and React Icons
       </footer>
     </div>
   );
