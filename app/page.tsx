@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { dracula, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { FiSend, FiTrash2, FiCopy, FiMoon, FiSun } from "react-icons/fi";
 import { BiLoaderAlt } from "react-icons/bi";
 
@@ -20,8 +22,8 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Function to call Gemini API
-  const callGeminiAPI = async (updatedMessages: Message[]) => {
+  // Function to call Gemini API and stream response
+  const callGeminiAPI = async (updatedMessages: Message[], onChunk: (chunk: string) => void) => {
     const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
     const userContent = updatedMessages.map((m) => ({
@@ -29,30 +31,31 @@ export default function Home() {
       parts: [{ text: m.content }],
     }));
 
-    const payload = {
-      contents: userContent,
-    };
+    const payload = { contents: userContent };
 
-    try {
-      const res = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" +
-          apiKey,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      const data = await res.json();
-
-      if (data && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return data.candidates[0].content.parts[0].text;
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       }
-      return "Sorry, I couldn't generate a response.";
-    } catch (error) {
-      console.error("Error calling Gemini API:", error);
-      return "An error occurred while fetching a response.";
+    );
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let done = false;
+
+    while (!done) {
+      const { value, done: readerDone } = await reader?.read()!;
+      done = readerDone;
+      const chunk = decoder.decode(value, { stream: true });
+      const json = JSON.parse(chunk);
+
+      const textPart = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (textPart) {
+        onChunk(textPart);
+      }
     }
   };
 
@@ -60,10 +63,7 @@ export default function Home() {
     e.preventDefault();
     if (!input.trim()) return;
 
-    const timestamp = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const newMessage: Message = { role: "user", content: input, timestamp };
     const updatedMessages = [...messages, newMessage];
 
@@ -71,18 +71,20 @@ export default function Home() {
     setInput("");
     setLoading(true);
 
-    try {
-      const response = await callGeminiAPI(updatedMessages);
-      const aiMessage: Message = {
-        role: "assistant",
-        content: response,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
+    let currentContent = "";
+    const aiMessage: Message = { role: "assistant", content: "", timestamp };
 
-      setMessages((prev) => [...prev, aiMessage]);
+    setMessages((prev) => [...prev, { ...aiMessage, content: currentContent }]);
+
+    try {
+      await callGeminiAPI(updatedMessages, (chunk) => {
+        currentContent += chunk;
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = currentContent;
+          return newMessages;
+        });
+      });
     } catch (error) {
       console.error("Error fetching response:", error);
     } finally {
@@ -126,17 +128,11 @@ export default function Home() {
         }`}
       >
         {/* Header */}
-        <div
-          className={`${
-            darkMode ? "bg-gray-700" : "bg-blue-600"
-          } text-white py-4 px-6 rounded-t-xl flex justify-between items-center`}
-        >
+        <div className={`text-white py-4 px-6 rounded-t-xl flex justify-between items-center ${
+          darkMode ? "bg-gray-700" : "bg-blue-600"
+        }`}>
           <h1 className="text-2xl font-bold">AI Chatbot</h1>
-          <button
-            onClick={clearChat}
-            className="hover:text-red-400 transition"
-            aria-label="Clear chat"
-          >
+          <button onClick={clearChat} className="hover:text-red-400 transition" aria-label="Clear chat">
             <FiTrash2 size={24} />
           </button>
         </div>
@@ -149,32 +145,37 @@ export default function Home() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className={`flex ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div
-                className={`relative px-4 py-2 max-w-xs rounded-lg shadow ${
-                  msg.role === "user"
-                    ? "bg-blue-500 text-white"
-                    : darkMode
-                    ? "bg-gray-700 text-gray-100"
-                    : "bg-gray-200 text-gray-800"
-                }`}
-              >
+              <div className={`relative px-4 py-2 max-w-xs rounded-lg shadow ${
+                msg.role === "user" ? "bg-blue-500 text-white" : darkMode ? "bg-gray-700 text-gray-100" : "bg-gray-200 text-gray-800"
+              }`}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  className="prose prose-sm dark:prose-invert"
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || "");
+                      return !inline && match ? (
+                        <SyntaxHighlighter
+                          style={darkMode ? dracula : oneLight}
+                          language={match[1]}
+                          PreTag="div"
+                          {...props}
+                        >
+                          {String(children).replace(/\n$/, "")}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                  className="prose dark:prose-invert prose-sm"
                 >
                   {msg.content}
                 </ReactMarkdown>
-                <p
-                  className={`text-xs mt-1 ${
-                    darkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  {msg.timestamp}
-                </p>
+                <p className="text-xs mt-1 opacity-70">{msg.timestamp}</p>
                 {msg.role === "assistant" && (
                   <button
                     onClick={() => copyToClipboard(msg.content)}
@@ -187,57 +188,23 @@ export default function Home() {
               </div>
             </motion.div>
           ))}
-          {loading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, repeat: Infinity }}
-              className="text-gray-500 flex items-center space-x-2"
-            >
-              <BiLoaderAlt className="animate-spin" size={20} />
-              <p>Assistant is typing...</p>
-            </motion.div>
-          )}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input Box */}
-        <form
-          onSubmit={sendMessage}
-          className={`p-4 flex space-x-2 border-t ${
-            darkMode ? "bg-gray-700" : "bg-gray-100"
-          }`}
-        >
+        <form onSubmit={sendMessage} className="p-4 flex space-x-2 border-t bg-gray-100 dark:bg-gray-700">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message here..."
-            className={`flex-1 p-2 rounded-lg border focus:outline-none focus:ring-2 ${
-              darkMode
-                ? "bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-500"
-                : "bg-white text-gray-900 border-gray-300 focus:ring-blue-400"
-            }`}
+            className="flex-1 p-2 rounded-lg border focus:outline-none focus:ring-2"
           />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className={`p-2 rounded-lg ${
-              darkMode
-                ? "bg-blue-500 hover:bg-blue-600"
-                : "bg-blue-600 hover:bg-blue-700"
-            } text-white transition-all disabled:bg-blue-300`}
-            aria-label="Send"
-          >
+          <button type="submit" disabled={loading || !input.trim()} className="p-2 bg-blue-600 text-white rounded-lg">
             <FiSend size={24} />
           </button>
         </form>
       </div>
-
-      {/* Footer */}
-      <footer className="mt-4 text-gray-600 dark:text-gray-400 text-sm text-center">
-        Built with ❤️ using Gemini, Next.js, Tailwind CSS, and React Icons
-      </footer>
     </div>
   );
 }
